@@ -1,0 +1,4 @@
+gymnasium
+pettingzoo
+ray[rllib]
+torch 
