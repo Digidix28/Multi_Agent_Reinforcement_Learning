@@ -7,12 +7,83 @@ from gymnasium import spaces
 from ray.rllib.utils.typing import AgentID
 
 class NewMultiAgentGridWorldEnv(MultiAgentEnv):
+    """
+    Environnement Multi-Agent de Grille pour RLlib.
+
+    Cet environnement implique deux agents qui naviguent dans un monde basé sur
+    une grille. Leur objectif est de visiter toutes les cases et d'atteindre une 
+    position cible. Les agents reçoivent des récompenses pour visiter des cases
+    non visitées et des pénalités pour revisiter des cases déjà visitées. L'épisode
+    se termine lorsque toutes les cases sont visitées et que les agents atteignent 
+    la position cible, ou lorsque le nombre maximal d'étapes est dépassé.
+    
+    IMPORTANT : La principale différence avec un environement single-agent est que 
+    tout est retourné dans un dictionnaire avec comme clé l'identifiant de l'agent.
+    
+    Exemple : Dans la fonction step, Si deux agents, "agent_1" et "agent_2", interagissent dans l'environnement, 
+    les sorties de la méthode `step()` seront structurées comme suit :
+    
+        observations = {
+            "agent_1": np.array([...]),  # Observation pour l'agent 1
+            "agent_2": np.array([...])   # Observation pour l'agent 2
+        }
+
+        rewards = {
+            "agent_1": 5.0,  # Récompense reçue par l'agent 1
+            "agent_2": -1.0  # Récompense reçue par l'agent 2
+        }
+
+        terminated = {
+            "agent_1": False,  # Indique si l'agent 1 a terminé
+            "agent_2": True,   # Indique si l'agent 2 a terminé
+            "__all__": True    # Indique si tous les agents ont terminé l'épisode
+        }
+
+        truncated = {
+            "agent_1": False,  # Indique si l'agent 1 a été tronqué
+            "agent_2": False,  # Indique si l'agent 2 a été tronqué
+            "__all__": False   # Indique si l'épisode a été tronqué globalement
+        }
+
+        infos = {
+            "agent_1": {},  # Informations supplémentaires pour l'agent 1
+            "agent_2": {}   # Informations supplémentaires pour l'agent 2
+        }
+
+    Au lieu de retourner simplement un de chaque. Ainsi, chaque agent reçoit des observations, récompenses, et indicateurs de statut
+    individuellement, permettant une gestion multi-agent indépendante.
+
+    Attributs:
+        - size (int): Taille de la grille (par défaut: 5x5).
+        - max_steps (int): Nombre maximal d'étapes avant la fin de l'épisode.
+        - possible_agents (list): Liste des agents possibles dans l'environnement.
+        - agents (list): Liste des agents actuellement actifs dans l'épisode.
+        - grid (np.ndarray): Matrice représentant l'état de la grille (0 = non visité, 1 = visité).
+        - agent_positions (dict): Positions actuelles de chaque agent sur la grille.
+        - target_position (np.ndarray): Position cible que les agents doivent atteindre.
+        - current_step (int): Compteur du nombre d'étapes effectuées dans l'épisode.
+        - render_mode (str): Mode de rendu ("human" ou "rgb_array").
+        TRES IMPORTANT :
+        - observation_spaces (dict): Espaces d'observation pour chaque agent. Doit correspondre au format de l'observation. 
+        C'est le paramètre utilisé pour déterminer la taille de l'imput l'ayer des réseaux de neurones. 
+        - action_spaces (dict): Espaces d'action pour chaque agent. Doit correspondre au format de l'action.
+    """
+    
     metadata = {
         "render_modes": ["human", "rgb_array"],
         "render_fps": 10,
     }
 
     def __init__(self, env_config: Dict = {}):
+        """
+        Initialise l'environnement avec les paramètres donnés.
+
+        Args:
+            env_config (dict): Configuration de l'environnement. Peut contenir:
+                - "size" (int): Taille de la grille (par défaut: 5).
+                - "max_steps" (int): Nombre maximal d'étapes (par défaut: 800).
+                - "render_mode" (str): Mode de rendu ("human" ou "rgb_array").
+        """
         super().__init__()
         self.size = env_config.get("size", 5)
         self.max_steps = env_config.get("max_steps", 800)
@@ -72,14 +143,35 @@ class NewMultiAgentGridWorldEnv(MultiAgentEnv):
             self.clock = pygame.time.Clock()
 
     def _get_observation(self, position: np.ndarray) -> np.ndarray:
-        """Generate a flattened observation for a given position."""
+        """
+        Génère une observation locale que l'agent va utiliser pour prendre une décision. 
+        L'observation contient la position actuelle de l'agent, l'état de la case actuelle, 
+        et l'état des voisins de l'agent. Celle-ci est ensuite aplatie pour être compatible
+        avec les réseaux de neurones utilisés par les policy.
+
+        Args:
+            position (np.ndarray): Position actuelle de l'agent.
+
+        Returns:
+            np.ndarray: Observation flattened contenant la position, l'état de la case actuelle,
+            et l'état des voisins.
+        """
+
         current_tile_state = self.grid[tuple(position)]
         neighbors_one_hot = self._get_one_hot_neighbors(position)
         observation = np.concatenate(([position[0], position[1], current_tile_state], neighbors_one_hot)).astype(np.float32)
         return observation
     
     def _get_one_hot_neighbors(self, position: np.ndarray) -> np.ndarray:
-        """Get a one-hot encoded vector of neighbor states with two features per neighbor."""
+        """
+        Génère un vecteur one-hot des états des voisins (deux caractéristiques par voisin).
+
+        Args:
+            position (np.ndarray): Position actuelle de l'agent.
+
+        Returns:
+            np.ndarray: Vecteur aplati des états des voisins.
+        """
         x, y = position
         neighbor_states = []
 
@@ -104,6 +196,14 @@ class NewMultiAgentGridWorldEnv(MultiAgentEnv):
         return np.array(neighbor_states).flatten().astype(np.float32)
 
     def reset(self, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[Dict[AgentID, np.ndarray], Dict]:
+        """
+        Réinitialise l'environnement à son état initial. 
+        Remet les agents à leurs positions et regénère la grille, 
+
+        Returns:
+            Tuple[Dict[AgentID, np.ndarray], Dict]: Observations initiales pour chaque agent
+            et dictionnaire d'informations.
+        """
         super().reset(seed=seed)
 
         # Reset grid
@@ -133,6 +233,29 @@ class NewMultiAgentGridWorldEnv(MultiAgentEnv):
         return observations, {}
 
     def step(self, actions: Dict[AgentID, int]) -> Tuple[Dict[AgentID, np.ndarray], Dict[AgentID, float], Dict[AgentID, bool], Dict[AgentID, bool], Dict[AgentID, dict]]:
+        """
+    Exécute une étape de simulation en appliquant les actions des agents.
+
+    Cette méthode gère :
+    - Le déplacement des agents en fonction de leurs actions.
+    - L'attribution des récompenses en fonction des cellules visitées ou revisitées.
+    - La vérification des conditions de terminaison de l'épisode.
+    - La génération des nouvelles observations pour chaque agent.
+    - La gestion des agents terminés et tronqués : Si un agent termine avant l'autre, 
+        il est retiré de la liste des agents actifs pour éviter de le traiter à l'étape suivante.
+
+    Args:
+        actions (Dict[AgentID, int]): Dictionnaire contenant les actions de chaque agent actif.
+
+    Returns:
+        Tuple:
+            - Dict[AgentID, np.ndarray]: Nouvelles observations pour chaque agent.
+            - Dict[AgentID, float]: Récompenses attribuées à chaque agent.
+            - Dict[AgentID, bool]: Indicateurs de terminaison pour chaque agent.
+            - Dict[AgentID, bool]: Indicateurs de troncature pour chaque agent.
+            - Dict[AgentID, dict]: Informations additionnelles (vide par défaut).
+    """
+        
         rewards = {}
         terminated = {}
         truncated = {}
@@ -194,6 +317,19 @@ class NewMultiAgentGridWorldEnv(MultiAgentEnv):
 
 
     def render(self):
+        """
+    Affiche l'état actuel de l'environnement.
+
+    Cette méthode gère le rendu graphique de la grille et des agents en utilisant
+    Pygame. Elle prend en charge deux modes :
+    - "human" : Affiche la grille dans une fenêtre interactive.
+    - "rgb_array" : Retourne une représentation de la grille sous forme de tableau NumPy, 
+    qui est utlisé pour enregistrer des vidéos de la run. 
+
+    Returns:
+        np.ndarray | None: Une image RGB de la grille si le mode est "rgb_array",
+        sinon None pour le mode "human".
+    """
         # Consistent return for different render modes
         if self.render_mode is None:
             return None
