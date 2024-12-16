@@ -1,4 +1,7 @@
-gymnasium
-pettingzoo
 ray[rllib]
-torch 
+gymnasium
+minigrid
+multigrid
+matplotlib
+numpy
+torch
