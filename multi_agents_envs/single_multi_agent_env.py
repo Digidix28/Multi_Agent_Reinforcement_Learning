@@ -195,10 +195,11 @@ class NewMultiAgentGridWorldEnv(MultiAgentEnv):
         for dx in [-1, 0, 1]:
             for dy in [-1, 0, 1]:
                 if dx == 0 and dy == 0:
-                    if tuple(self.agent_positions[self.other(agent_id)]) == (x,y):
-                        neighbor_states.append(1) # 0 or 1 in MA
-                    else:
-                        neighbor_states.append(0)
+                    # if tuple(self.agent_positions[self.other(agent_id)]) == (x,y):
+                    #     neighbor_states.append(1) # 0 or 1 in MA
+                    # else:
+                    #     neighbor_states.append(0)
+                    neighbor_states.append(0)
                     continue
 
                 nx, ny = x + dx, y + dy
@@ -207,10 +208,11 @@ class NewMultiAgentGridWorldEnv(MultiAgentEnv):
                     if state == 0:  # Unvisited
                         neighbor_states += [1, 0]
                     elif state == 1:  # Visited & Empty
-                        if tuple(self.agent_positions[self.other(agent_id)]) == (nx,ny):
-                            neighbor_states += [1, 1] 
-                        else:
-                            neighbor_states += [0, 1]
+                        # if tuple(self.agent_positions[self.other(agent_id)]) == (nx,ny):
+                        #     neighbor_states += [1, 1] 
+                        # else:
+                        #     neighbor_states += [0, 1]
+                        neighbor_states += [0, 1]
                 else:
                     # Out of bounds: [0, 0]
                     neighbor_states += [0, 0]
@@ -281,7 +283,7 @@ class NewMultiAgentGridWorldEnv(MultiAgentEnv):
             - Dict[AgentID, dict]: Informations additionnelles (vide par défaut).
     """
         
-        rewards = {agent_id: 0 for agent_id in actions.keys()}
+        rewards = {agent_id: 0 for agent_id in self.agents}
         terminated = {}
         truncated = {}
         infos = {}
@@ -308,7 +310,7 @@ class NewMultiAgentGridWorldEnv(MultiAgentEnv):
         # Increment step count
         self.current_step += 1
 
-        if len(self.agents) > 1 and np.array_equal(self.agent_positions["agent_1"], self.agent_positions["agent_2"]):
+        if np.array_equal(self.agent_positions["agent_1"], self.agent_positions["agent_2"]):
             # the two agents hit each other!
             rewards["agent_1"] -= 20
             rewards["agent_2"] -= 20
